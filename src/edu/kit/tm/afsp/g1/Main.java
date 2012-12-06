@@ -9,34 +9,35 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 public class Main {
-	private static final byte _255 = (byte) 0xff;
-	private static final int PORT = 8888;
+    private static final byte _255 = (byte) 0xff;
+    private static final int PORT = 8888;
 
-	public static void main(String[] args) throws IOException {
-		
-		Logger logger = LogManager.getLogger("afsp");
-		InetAddress broadcast = InetAddress.getByAddress(new byte[] { _255,
-				_255, _255, _255 });
+    public static void main(String[] args) throws IOException {
 
-		logger.debug("Starting...");
-		logger.debug("PORT: " + PORT);
-		logger.debug("BROADCAST: " + broadcast);
+	Logger logger = LogManager.getLogger("afsp");
+	InetAddress broadcast = InetAddress.getByAddress(new byte[] { _255,
+		_255, _255, _255 });
 
-		SocketAddress udpaddr = new InetSocketAddress(broadcast, PORT);
-		SocketAddress tcpaddr = new InetSocketAddress(PORT);
+	logger.debug("Starting...");
+	logger.debug("PORT: " + PORT);
+	logger.debug("BROADCAST: " + broadcast);
 
-		logger.debug("starting client");
-		AFSPHost host = new AFSPHost("weigla",tcpaddr, PORT, udpaddr, broadcast);
+	SocketAddress udpaddr = new InetSocketAddress(broadcast, PORT);
+	SocketAddress tcpaddr = new InetSocketAddress(PORT);
 
-		logger.debug("init signin");
-		host.signin();
-		logger.debug("waiting for serving");
-		host.serve();
+	logger.debug("starting client");
+	AFSPHost host = new AFSPHost("weigla", tcpaddr, PORT, udpaddr,
+		broadcast);
 
-		logger.debug("push out signout");
-		host.signout();
+	logger.debug("init signin");
+	host.signin();
+	logger.debug("waiting for serving");
+	host.serve();
 
-		host.quit();
-	}
+	logger.debug("push out signout");
+	host.signout();
+
+	host.quit();
+    }
 
 }

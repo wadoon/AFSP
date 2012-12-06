@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ====================================================================== 
+     07.12.2012 00:07:39                                                        
+
+     AFSP    
+     Gruppe1
+                   
+     Alexander Weigl                                      
+     ====================================================================== -->
+<project name="AFSP" default="compile">
+	<description>
+            AFSP-Gruppe1
+    </description>
+
+	<property name="src" location="src" />
+	<property name="build" location="build" />
+	<property name="dist" location="./" />
+
+	<target name="init">
+		<!-- Create the time stamp -->
+		<tstamp />
+		<!-- Create the build directory structure used by compile -->
+		<mkdir dir="${build}" />
+	</target>
+
+	<target name="compile" depends="init" description="compile the source ">
+		<!-- Compile the java code from ${src} into ${build} -->
+		<javac srcdir="${src}" destdir="${build}">
+			<classpath>
+				<fileset includes="*.jar" dir=".">
+				</fileset>
+			</classpath>
+		</javac>
+		<copy file="${src}/log4j2.xml" todir="${build}" />
+	</target>
+
+	<target name="dist" depends="compile" description="generate the distribution">
+		<!-- Create the distribution directory -->
+		<mkdir dir="${dist}" />
+		<jar jarfile="${dist}/afsp-${DSTAMP}.jar" basedir="${build}" filesetmanifest="mergewithoutmain">
+			<manifest>
+				<attribute name="Main-Class" value="edu.kit.tm.afsp.g1.Main" />
+				<attribute name="Class-Path" value="." />
+			</manifest>
+			<fileset dir="${build}" />
+			<zipfileset excludes="META-INF/*.SF" src="/home/weigla/docs/kit/__/Telematik/AFSP/log4j-core-2.0-beta3-sources.jar" />
+			<zipfileset excludes="META-INF/*.SF" src="/home/weigla/docs/kit/__/Telematik/AFSP/log4j-core-2.0-beta3.jar" />
+			<zipfileset excludes="META-INF/*.SF" src="/home/weigla/docs/kit/__/Telematik/AFSP/log4j-api-2.0-beta3.jar" />
+			<zipfileset excludes="META-INF/*.SF" src="/home/weigla/docs/kit/__/Telematik/AFSP/commons-io-2.4-sources.jar" />
+			<zipfileset excludes="META-INF/*.SF" src="/home/weigla/docs/kit/__/Telematik/AFSP/commons-io-2.4.jar" />
+		</jar>
+
+	</target>
+
+	<target name="clean" description="clean up">
+		<!-- Delete the ${build} and ${dist} directory trees -->
+		<delete dir="${build}" />
+		<delete dir="${dist}" />
+	</target>
+
+</project>
