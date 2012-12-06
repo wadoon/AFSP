@@ -5,5 +5,7 @@
 	<classpathentry kind="lib" path="log4j-core-2.0-beta3-sources.jar"/>
 	<classpathentry kind="lib" path="log4j-core-2.0-beta3.jar"/>
 	<classpathentry kind="lib" path="log4j-api-2.0-beta3.jar"/>
+	<classpathentry kind="lib" path="commons-io-2.4-sources.jar"/>
+	<classpathentry kind="lib" path="commons-io-2.4.jar" sourcepath="commons-io-2.4-sources.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

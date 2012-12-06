@@ -1,7 +1,10 @@
 package edu.kit.tm.afsp.g1;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -17,6 +20,8 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import org.apache.commons.io.CopyUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -61,6 +66,10 @@ public class AFSPHost {
 		// every 10 seconds
 		Timer timer = new Timer();
 		timer.schedule(new HeartBeatTimer(), 10 * 1000, 10 * 1000);
+	}
+	
+	public void download(ForeignHost fh, byte[] digest) {
+		//TODO
 	}
 
 	public void sendEmptyUDP(MessageType mt) throws IOException {
@@ -150,8 +159,40 @@ public class AFSPHost {
 		}
 	}
 
-	private void download_rpl(Socket client) {
+	private void download_rpl(Socket client) throws IOException {
+		InputStream is = client.getInputStream();
+		OutputStream os = client.getOutputStream();
 
+		byte[] digest = null;// TODO read out hash value
+		File fil = localFileList.getFile(digest);
+
+		if (fil == null) {
+			Header h = Header.create(MessageType.DOWNLOAD_ERR, pseudonym, 0);
+			os.write(h.toByteArray());
+			os.close();
+			client.close();
+		} else {
+			BufferedInputStream bis = new BufferedInputStream(
+					new FileInputStream(fil));
+			Header h = Header.create(MessageType.DOWNLOAD_RPL, pseudonym,
+					fil.length());
+
+			os.write(h.toByteArray());
+			IOUtils.copy(bis, os);
+
+			Header response = new Header(is);
+			switch (response.getMessageType()) {
+			case DOWNLOAD_ACK:
+				LOGGER.info("Download successful");
+				break;
+			case DOWNLOAD_ERR:
+				LOGGER.info("Download unsuccessful");
+				break;
+			default:
+				LOGGER.info("no valid download response");
+				break;
+			}
+		}
 	}
 
 	private void exchange_filelist(Socket client) throws IOException {

@@ -13,7 +13,7 @@ import java.util.LinkedList;
 import java.util.Map;
 
 public class LocalFileList {
-	private Collection<File> files = new LinkedList<>();
+	private Map<byte[], File> files = new HashMap<>();
 	private Map<File, byte[]> hashes = new HashMap<>();
 	public static final String HASH_ALGORITHM = "SHA-512";
 	public MessageDigest md;
@@ -22,15 +22,17 @@ public class LocalFileList {
 	}
 
 	public void add(File f) throws NoSuchAlgorithmException, IOException {
-		files.add(f);
-		hashes.put(f, calculateHash(f));
+		byte[] hash = calculateHash(f);
+		hashes.put(f, hash);
+		files.put(hash, f);
+
 	}
 
 	public byte[] toByteArray() {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		DataOutputStream dos = new DataOutputStream(baos);
 		try {
-			for (File f : files) {
+			for (File f : hashes.keySet()) {
 				Header.write6ByteInt(dos, f.length());
 				dos.writeShort(f.getName().length());
 				dos.write(hashes.get(f));
@@ -54,5 +56,9 @@ public class LocalFileList {
 		}
 		fis.close();
 		return md.digest();
+	}
+
+	public File getFile(byte[] digest) {
+		return files.get(digest);
 	}
 }

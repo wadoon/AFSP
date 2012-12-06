@@ -152,11 +152,11 @@ class Header {
 		dos.write(b);
 	}
 
-	public static Header create(MessageType type, String pseudonym, int length) {
+	public static Header create(MessageType type, String pseudonym, long l) {
 		Header h = new Header();
 		h.setMessageType(type);
 		h.setPseudonym(pseudonym);
-		h.setLength(length);
+		h.setLength(l);
 		return h;
 	}
 
