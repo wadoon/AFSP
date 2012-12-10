@@ -5,8 +5,12 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
+import javax.swing.SwingUtilities;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import edu.kit.tm.afsp.g1.ui.MainFrame;
 
 public class Main {
     private static final byte _255 = (byte) 0xff;
@@ -28,6 +32,14 @@ public class Main {
 	logger.debug("starting client");
 	AFSPHost host = new AFSPHost("weigla", tcpaddr, PORT, udpaddr,
 		broadcast);
+	
+	final MainFrame mf = new MainFrame(host);
+	SwingUtilities.invokeLater(new Runnable() {
+	    @Override
+	    public void run() {
+		mf.setVisible(true);
+	    }
+	});
 
 	logger.debug("init signin");
 	host.signin();

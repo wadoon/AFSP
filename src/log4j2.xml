@@ -12,5 +12,8 @@
 		<logger name="afsp" level="trace">
 			<appender-ref ref="Console" />
 		</logger>
+		<logger name="afsp-ui" level="trace">
+			<appender-ref ref="Console" />
+		</logger>
 	</loggers>
 </configuration>
