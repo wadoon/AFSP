@@ -8,10 +8,14 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class LocalFileList extends LinkedList<File> {
     /**
@@ -22,6 +26,7 @@ public class LocalFileList extends LinkedList<File> {
     private Map<byte[], File> files = new HashMap<>();
     private Map<File, byte[]> hashes = new HashMap<>();
     public static final String HASH_ALGORITHM = "SHA-512";
+    private static Logger logger = LogManager.getLogger("afsp");
 
     public LocalFileList() {
     }
@@ -33,6 +38,10 @@ public class LocalFileList extends LinkedList<File> {
 	    hashes.put(f, hash);
 	    files.put(hash, f);
 	    super.add(f);
+
+	    logger.debug("file added to local list " + f + " :: "
+		    + Arrays.toString(hash));
+
 	    return true;
 	} catch (NoSuchAlgorithmException e) {
 	    e.printStackTrace();

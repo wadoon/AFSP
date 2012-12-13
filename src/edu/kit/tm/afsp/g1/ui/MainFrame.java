@@ -3,10 +3,12 @@ package edu.kit.tm.afsp.g1.ui;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.event.ActionEvent;
+import java.io.File;
 
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -84,26 +86,32 @@ public class MainFrame extends JFrame {
     }
 
     class AddFileAction extends WAction {
-	/**
-	 * 
-	 */
 	private static final long serialVersionUID = 1045963004149071917L;
+	JFileChooser jfc = new JFileChooser(".");
 
 	public AddFileAction() {
 	    setName("Add File");
+	    jfc.setMultiSelectionEnabled(true);
 	}
 
 	@Override
 	public void actionPerformed(ActionEvent e) {
-	    System.out.println("MainFrame.AddFileAction.actionPerformed()");
-	}
+	    logger.debug("MainFrame.AddFileAction.actionPerformed()");
 
+	    int c = jfc.showOpenDialog(MainFrame.this);
+	    if (c == JFileChooser.APPROVE_OPTION) {
+		File[] files = jfc.getSelectedFiles();
+
+		for (File file : files) {
+		    logger.debug("add file " + file);
+		    afspHost.getLocalFiles().add(file);
+		}
+		afspHost.onFilesListUpdated();
+	    }
+	}
     }
 
     class RemoveFileAction extends WAction {
-	/**
-	 * 
-	 */
 	private static final long serialVersionUID = 1L;
 
 	public RemoveFileAction() {

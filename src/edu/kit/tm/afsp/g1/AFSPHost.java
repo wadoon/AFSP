@@ -342,4 +342,8 @@ public class AFSPHost {
     public LocalFileList getLocalFiles() {
 	return localFileList;
     }
+
+    public void onFilesListUpdated() {
+	// TODO SEND EXCHG FILELIST TO ALL PEERS
+    }
 }
