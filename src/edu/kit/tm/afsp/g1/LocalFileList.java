@@ -13,7 +13,10 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.zip.Checksum;
 
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.io.FileUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -34,21 +37,32 @@ public class LocalFileList extends LinkedList<File> {
     public boolean add(File f) {
 	byte[] hash;
 	try {
-	    hash = calculateHash(f);
+	    // deprecated
+	    // hash = calculateHash(f);
+	    hash = DigestUtils.md5(new FileInputStream(f));
 	    hashes.put(f, hash);
 	    files.put(hash, f);
 	    super.add(f);
 
 	    logger.debug("file added to local list " + f + " :: "
-		    + Arrays.toString(hash));
+		    + md52str(hash));
 
 	    return true;
-	} catch (NoSuchAlgorithmException e) {
-	    e.printStackTrace();
 	} catch (IOException e) {
 	    e.printStackTrace();
 	}
 	return false;
+    }
+
+    public static String md52str(byte[] hash) {
+	StringBuilder sb = new StringBuilder(hash.length * 2);
+
+	for (byte b : hash) {
+	    int i = ((int) b) & 0xff;
+	    sb.append(Integer.toString(i, 16));
+	}
+
+	return sb.toString();
     }
 
     public byte[] toByteArray() {
@@ -57,9 +71,9 @@ public class LocalFileList extends LinkedList<File> {
 	try {
 	    for (File f : hashes.keySet()) {
 		Header.write6ByteInt(dos, f.length());
-		dos.writeShort(f.getName().length());
+		Header.write2ByteInt(dos, f.getName().length());
 		dos.write(hashes.get(f));
-		dos.writeUTF(f.getName());
+		Header.writeUTF(dos, f.getName());
 	    }
 	    dos.flush();
 	} catch (IOException e) {
@@ -68,6 +82,7 @@ public class LocalFileList extends LinkedList<File> {
 	return baos.toByteArray();
     }
 
+    @Deprecated
     private static byte[] calculateHash(File f)
 	    throws NoSuchAlgorithmException, IOException {
 	MessageDigest md = MessageDigest.getInstance(HASH_ALGORITHM);

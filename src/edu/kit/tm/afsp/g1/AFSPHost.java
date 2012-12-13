@@ -1,5 +1,7 @@
 package edu.kit.tm.afsp.g1;
 
+import java.awt.BorderLayout;
+import java.awt.Component;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -14,59 +16,69 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import edu.kit.tm.afsp.g1.ui.LocalFileListTableModel;
+import edu.kit.tm.afsp.g1.ui.MainFrame;
+
 public class AFSPHost {
+    private static final int DIGEST_LENGTH_BYTE = 16;
     private ServerSocket tcpServerSocket;
     private DatagramSocket udpSocket;
     private String pseudonym;
     private InetAddress broadcastAddress;
     private int port;
-    private Map<ForeignHost, ForeignHost> knownHosts = new HashMap<>();
+    private List<ForeignHost> knownHosts = new LinkedList<>();
 
     private LocalFileList localFileList = new LocalFileList();
     private Thread tcpServerThread;
     private Thread udpServerThread;
+    private Timer timer = new Timer("HEARTBEAT", true);
 
     private static Logger LOGGER = LogManager.getLogger("afsp");
+
+    private ExecutorService exeService = Executors.newCachedThreadPool();
+    private LinkedList<AFSPHostListener> listeners = new LinkedList<>();
 
     public AFSPHost(String pseudonym, SocketAddress serverAddress, int port,
 	    SocketAddress udpAddress, InetAddress broadcastAddr)
 	    throws IOException {
 
 	this.pseudonym = pseudonym;
-
 	this.port = port;
 	this.broadcastAddress = broadcastAddr;
 
 	tcpServerSocket = new ServerSocket(port);
-	udpSocket = new DatagramSocket(port);
+	udpSocket = new DatagramSocket(port, InetAddress.getByName("0.0.0.0"));
 
 	// tcpServerSocket.bind(serverAddress);
-	udpSocket.connect(udpAddress);
+	udpSocket.setBroadcast(true);
 
-	tcpServerThread = new Thread(new TCPServerThread());
-	udpServerThread = new Thread(new UDPServerThread());
-
-	tcpServerThread.setName("AFSP-TCP");
-	udpServerThread.setName("AFSP-UDP");
-
-	tcpServerThread.setDaemon(true);
-	udpServerThread.setDaemon(true);
-
+	tcpServerThread = new TCPServerThread();
+	udpServerThread = new UDPServerThread();
 	udpServerThread.start();
 	tcpServerThread.start();
 
 	// every 10 seconds
-	Timer timer = new Timer();
 	timer.schedule(new HeartBeatTimer(), 10 * 1000, 10 * 1000);
     }
 
@@ -80,23 +92,32 @@ public class AFSPHost {
 	h.setLength(0);
 	h.setMessageType(mt);
 
+	LOGGER.info("info send empty udp-datagram with: " + h + " to: "
+		+ broadcastAddress + ":" + port);
+
 	byte buf[] = h.toByteArray();
 	DatagramPacket outgoing = new DatagramPacket(buf, buf.length);
 	outgoing.setPort(port);
 	outgoing.setAddress(broadcastAddress);
 	udpSocket.send(outgoing);
+	LOGGER.info("sent");
     }
 
     public void signin() throws IOException {
+	LOGGER.info("send signin");
 	sendEmptyUDP(MessageType.SIGNIN);
     }
 
     public void signout() throws IOException {
+	LOGGER.info("send signout");
 	sendEmptyUDP(MessageType.SIGNOUT);
     }
 
     public Socket openClientSocket(ForeignHost fh, Header header)
 	    throws IOException {
+	LOGGER.info("open tcp socket to: " + fh.getAddr() + ":" + port);
+	LOGGER.info("send header: " + header);
+
 	Socket s = new Socket(fh.getAddr(), port);
 	OutputStream os = s.getOutputStream();
 	os.write(header.toByteArray());
@@ -104,12 +125,14 @@ public class AFSPHost {
     }
 
     public void signin_ack(ForeignHost fh) throws IOException {
+	LOGGER.debug("signin_ack to: " + fh);
 	Header h = Header.create(MessageType.SIGNIN_ACK, pseudonym, 0);
 	Socket s = openClientSocket(fh, h);
-	s.close();
+	IOUtils.closeQuietly(s);
     }
 
     public void exchange_filelist_req(ForeignHost fh) throws IOException {
+	LOGGER.info("exchange filelist request to: " + fh);
 	Header h = Header.create(MessageType.EXCHANGE_FILELIST_REQ, pseudonym,
 		0);
 	Socket s = openClientSocket(fh, h);
@@ -118,38 +141,46 @@ public class AFSPHost {
 	Header inHeader = new Header(is);
 
 	byte[] content = new byte[(int) inHeader.getLength()];
-	fill(is, content);
+	IOUtils.readFully(is, content);
 
 	ByteArrayInputStream bais = new ByteArrayInputStream(content);
 	DataInputStream inputStream = new DataInputStream(bais);
+	parseFileList(fh, inputStream);
+	IOUtils.closeQuietly(inputStream);
+    }
 
+    public static void parseFileList(ForeignHost fh, DataInputStream inputStream)
+	    throws IOException {
 	while (inputStream.available() >= 1) {
+	    byte[] digest = new byte[DIGEST_LENGTH_BYTE];// TODO SHA512
+
 	    long length = Header.read6ByteInt(inputStream);
 	    short fileNameLength = inputStream.readShort();
-	    byte[] digest = new byte[512 / 8];// TODO SHA512
-	    inputStream.read(digest);
+	    IOUtils.readFully(inputStream, digest);
 	    String filename = Header.readUTF(inputStream, fileNameLength);
+
+	    LOGGER.debug("parsed " + length + "," + fileNameLength + ","
+		    + filename + "," + LocalFileList.md52str(digest));
 
 	    fh.addFile(filename, digest, length);
 	}
     }
 
-    private static void fill(InputStream is, byte[] content) throws IOException {
-	for (int readed = 0; readed < content.length;) {
-	    int length = is.read(content, readed, content.length - readed);
-	    readed += length;
-	}
-    }
-
-    public void sendHEARTBEAT() throws IOException {
+    public void sendHeartbeat() throws IOException {
+	LOGGER.info("send heartbeat");
 	sendEmptyUDP(MessageType.HEARTBEAT);
     }
 
     @SuppressWarnings("incomplete-switch")
     private void handleTCPRequest(Socket client) throws IOException {
+	LOGGER.info("handleTCPRequest of " + client.getRemoteSocketAddress());
+
 	InputStream is = client.getInputStream();
 	Header h = new Header(is);
-	ForeignHost fh = addToKnownHost(client.getInetAddress(), h);
+	ForeignHost fh = getKnownHost(client.getInetAddress(), h);
+
+	LOGGER.info("Header: " + h);
+	LOGGER.info("ForeignHost Info: " + fh);
 
 	switch (h.getMessageType()) {
 	case EXCHANGE_FILELIST:
@@ -159,6 +190,8 @@ public class AFSPHost {
 	    download_rpl(client);
 	    break;
 	}
+	LOGGER.info("end request handling, closing socket");
+	client.close();
     }
 
     private void download_rpl(Socket client) throws IOException {
@@ -198,23 +231,33 @@ public class AFSPHost {
     }
 
     private void exchange_filelist(Socket client) throws IOException {
+	LOGGER.debug("handle EXCHANGE_FILELIST");
+
 	byte[] b = localFileList.toByteArray();
 	Header h = Header.create(MessageType.EXCHANGE_FILELIST, pseudonym,
 		b.length);
+
+	LOGGER.debug("send header: " + h);
+	LOGGER.debug("send DATA: " + Arrays.toString(b));
+
 	OutputStream os = client.getOutputStream();
 	os.write(h.toByteArray());
 	os.write(b);
-	os.close();
-	client.close();
+	os.flush();
+	IOUtils.closeQuietly(os);
     }
 
     @SuppressWarnings("incomplete-switch")
     private void handleUDPRequest(DatagramPacket packet) throws IOException {
+	LOGGER.debug("handle udp request");
+
 	Header h = new Header(packet);
+
+	LOGGER.info("got header: " + h);
 
 	switch (h.getMessageType()) {
 	case SIGNIN:
-	    ForeignHost fh = addToKnownHost(packet.getAddress(), h);
+	    ForeignHost fh = getKnownHost(packet.getAddress(), h);
 	    signin_ack(fh);
 	    exchange_filelist_req(fh);
 	    break;
@@ -222,10 +265,12 @@ public class AFSPHost {
 	    removeFromKnownHost(packet, h);
 	    break;
 	case HEARTBEAT:
-	    ForeignHost host = addToKnownHost(packet.getAddress(), h);
+	    ForeignHost host = getKnownHost(packet.getAddress(), h);
 	    host.setLastSeen(new Date());
 	    break;
 	}
+
+	firePeerUpdate();
     }
 
     private void removeFromKnownHost(DatagramPacket packet, Header h) {
@@ -233,13 +278,13 @@ public class AFSPHost {
 	knownHosts.remove(fh);
     }
 
-    private ForeignHost addToKnownHost(InetAddress addr, Header h) {
+    private ForeignHost getKnownHost(InetAddress addr, Header h) {
 	ForeignHost fh = ForeignHost.create(addr, h.getPseudonym());
 
-	if (knownHosts.containsKey(fh))
-	    return knownHosts.get(fh);
+	if (knownHosts.contains(fh))
+	    return knownHosts.get(knownHosts.indexOf(fh));
 
-	knownHosts.put(fh, fh);
+	knownHosts.add(fh);
 	return fh;
     }
 
@@ -247,23 +292,25 @@ public class AFSPHost {
 	@Override
 	public void run() {
 	    try {
-		sendHEARTBEAT();
+		sendHeartbeat();
 	    } catch (IOException e) {
 		e.printStackTrace();
 	    }
 	}
     }
 
-    class TCPServerThread implements Runnable {
+    class TCPServerThread extends Thread {
+	public TCPServerThread() {
+	    setName("TCP");
+	}
+
 	@Override
 	public void run() {
 	    while (true) {
 		try {
 		    Socket clientSocket = tcpServerSocket.accept();
-		    Thread t = new Thread(new ClientThread(clientSocket));
-		    t.setName("client thread - "
-			    + clientSocket.getRemoteSocketAddress());
-		    t.start();
+		    Runnable clientThread = new TCPClientThread(clientSocket);
+		    exeService.execute(clientThread);
 		} catch (IOException e) {
 		    LOGGER.error("tcp-thread", e);
 		}
@@ -271,48 +318,60 @@ public class AFSPHost {
 	}
     }
 
-    class UDPServerThread implements Runnable {
+    class UDPServerThread extends Thread {
+
+	public UDPServerThread() {
+	    setName("UDP");
+	}
+
 	@Override
 	public void run() {
-
 	    while (true) {
-		while (true) {
+		try {
 		    byte[] buf = new byte[64 * 1024];
-		    final DatagramPacket p = new DatagramPacket(buf, buf.length);
-		    try {
-			udpSocket.receive(p);
-			new Thread(new Runnable() {
-			    @Override
-			    public void run() {
-				try {
-				    handleUDPRequest(p);
-				} catch (IOException e) {
-				    LOGGER.error(
-					    "Error in udp-thread: "
-						    + p.getAddress(), e);
-				}
-			    }
-			}).start();
-		    } catch (IOException e) {
-			LOGGER.error("Error in udp-thread: " + p.getAddress(),
-				e);
-		    }
+		    DatagramPacket p = new DatagramPacket(buf, buf.length);
+		    udpSocket.receive(p);
+
+		    UDPClientThread clientThread = new UDPClientThread(p);
+		    exeService.execute(clientThread);
+		} catch (IOException e) {
+		    LOGGER.error("Error in udp-thread");
 		}
 	    }
 
 	}
     }
 
-    class ClientThread implements Runnable {
+    class UDPClientThread implements Runnable {
+	private DatagramPacket p;
+
+	public UDPClientThread(DatagramPacket p) {
+	    this.p = p;
+	}
+
+	@Override
+	public void run() {
+	    try {
+		handleUDPRequest(p);
+	    } catch (IOException e) {
+		LOGGER.error("Error in udp-thread: " + p.getAddress(), e);
+	    }
+	}
+    }
+
+    class TCPClientThread implements Runnable {
 	private Socket client;
 
-	public ClientThread(Socket clientSocket) {
+	public TCPClientThread(Socket clientSocket) {
 	    client = clientSocket;
 	}
 
 	@Override
 	public void run() {
 	    try {
+		LOGGER.info("started clientThread for "
+			+ client.getRemoteSocketAddress());
+
 		handleTCPRequest(client);
 	    } catch (IOException e) {
 		LOGGER.error(
@@ -324,18 +383,26 @@ public class AFSPHost {
 
     public void serve() {
 	try {
+	    LOGGER.debug("wainting for tcpServerThread to close");
 	    tcpServerThread.join();
 	} catch (InterruptedException e) {
 	    LOGGER.error(e);
 	}
     }
 
+    @SuppressWarnings("deprecation")
     public void quit() {
+	LOGGER.debug("quit requested by method call");
+
+	LOGGER.debug("tear down udpSocket");
 	udpSocket.close();
+
 	try {
+	    LOGGER.debug("tear down tcpServerSocket");
 	    tcpServerSocket.close();
 	} catch (IOException e) {
 	    LOGGER.error("Error on quitting", e);
+	    tcpServerThread.stop();
 	}
     }
 
@@ -344,6 +411,22 @@ public class AFSPHost {
     }
 
     public void onFilesListUpdated() {
+	LOGGER.debug("filelist change -> send info to peers");
 	// TODO SEND EXCHG FILELIST TO ALL PEERS
+    }
+
+    public void addListener(AFSPHostListener lis) {
+	listeners.add(lis);
+    }
+
+    public void firePeerUpdate() {
+	LOGGER.debug("firePeerUpdate");
+	for (AFSPHostListener lis : listeners) {
+	    lis.onPeerUpdate();
+	}
+    }
+
+    public List<ForeignHost> getForeignHosts() {
+	return knownHosts;
     }
 }

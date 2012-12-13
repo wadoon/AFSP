@@ -10,17 +10,17 @@ import edu.kit.tm.afsp.g1.LocalFileList;
 public class LocalFileListTableModel extends AbstractTableModel {
     private static final long serialVersionUID = -3001909179793776769L;
 
-    private String[] COLUMNS = { "Filename", "Digest" };
+    private String[] COLUMNS = { "Filename", "Size", "Digest" };
 
-    private LocalFileList localFileList;
+    private AFSPHost afspHost;
 
     public LocalFileListTableModel(AFSPHost afspHost) {
-	this.localFileList = afspHost.getLocalFiles();
+	this.afspHost = afspHost;
     }
 
     @Override
     public int getRowCount() {
-	return localFileList.size();
+	return afspHost.getLocalFiles().size();
     }
 
     @Override
@@ -29,13 +29,20 @@ public class LocalFileListTableModel extends AbstractTableModel {
     }
 
     @Override
+    public boolean isCellEditable(int rowIndex, int columnIndex) {
+	return false;
+    }
+
+    @Override
     public Object getValueAt(int rowIndex, int columnIndex) {
-	File f = localFileList.get(rowIndex);
+	File f = afspHost.getLocalFiles().get(rowIndex);
 	switch (columnIndex) {
 	case 0:
 	    return f.getName();
 	case 1:
-	    return localFileList.getDigest(f);
+	    return f.length();
+	case 2:
+	    return LocalFileList.md52str(afspHost.getLocalFiles().getDigest(f));
 	}
 	return "<n/a>";
     }

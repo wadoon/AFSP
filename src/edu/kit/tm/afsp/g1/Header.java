@@ -6,11 +6,18 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.DatagramPacket;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.Arrays;
+
+import javax.swing.Box.Filler;
+
+import org.apache.commons.io.CopyUtils;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 
 /**
  * Standard-Header
@@ -97,12 +104,7 @@ class Header {
     static final long MASK = 0x0000_FFFF_FFFF_FFFFL;
 
     public void setLength(long length) {
-
-	System.out.println(Long.toBinaryString(length));
-
 	this.length = length & MASK;
-
-	System.out.println(Long.toBinaryString(this.length));
     }
 
     public String getPseudonym() {
@@ -124,16 +126,35 @@ class Header {
 	this.messageType = messageType;
     }
 
-    public static void write6ByteInt(DataOutputStream dos, long l)
+    public static void write6ByteInt(OutputStream dos, long l)
 	    throws IOException {
 
-	short upper = (short) (l >> 32);
-	int lower = (int) l & 0xFFFFFFFF;
-	dos.writeShort(upper);
-	dos.writeInt(lower);
+	// short upper = (short) (l >> 32);
+	// int lower = (int) l & 0xFFFFFFFF;
+	// dos.writeShort(upper);
+	// dos.writeInt(lower);
+
+	byte[] buf = new byte[6];
+
+	for (int i = buf.length - 1; i >= 0; i--) {
+	    buf[i] = (byte) (l & 0xFF);
+	    l >>= 8;
+	}
+	dos.write(buf);
     }
 
-    public static long read6ByteInt(DataInputStream dos) throws IOException {
+    public static void write2ByteInt(OutputStream dos, int num)
+	    throws IOException {
+	byte[] buf = new byte[2];
+
+	for (int i = buf.length - 1; i >= 0; i--) {
+	    buf[i] = (byte) (num & 0xFF);
+	    num >>= 8;
+	}
+	dos.write(buf);
+    }
+
+    public static long read6ByteInt(InputStream dos) throws IOException {
 	// Does not work!
 	// short u = dos.readShort();
 	// long upper = getUnsignedShort(u);
@@ -200,7 +221,7 @@ class Header {
 
     private void writeUTF(DataOutputStream dos, String string)
 	    throws IOException {
-	Charset cs = Charset.forName("utf8");
+	Charset cs = Charset.forName(CHARSET);
 	byte[] b = string.getBytes(cs);
 	dos.write(b);
     }
@@ -213,11 +234,11 @@ class Header {
 	return h;
     }
 
-    public static String readUTF(DataInputStream inputStream,
-	    short fileNameLength) throws IOException {
-	byte buf[] = new byte[fileNameLength];
-	inputStream.read(buf);
-	return new String(buf);
+    public static String readUTF(DataInputStream inputStream, short length)
+	    throws IOException {
+	byte buf[] = new byte[length];
+	IOUtils.readFully(inputStream, buf);
+	return new String(buf, CHARSET);
     }
 
     @Override
@@ -252,4 +273,23 @@ class Header {
 	    return false;
 	return true;
     }
+
+    public static void writeUTF(OutputStream os, String name)
+	    throws IOException {
+	try {
+	    byte b[] = name.getBytes(CHARSET);
+	    os.write(b);
+	} catch (UnsupportedEncodingException e) {
+	    e.printStackTrace();
+	}
+    }
+
+    @Override
+    public String toString() {
+	return "Header [length=" + length + ", pseudonym=" + pseudonym
+		+ ", messageType=" + messageType + "]";
+    }
+    
+    
+
 }
