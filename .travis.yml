@@ -1,4 +1,6 @@
 language: java
+install: ant test
+script: java -cp afsp.jar edu.kit.tm.afsp.g1.TestMain
 jdk:
   - oraclejdk7
   - openjdk6
