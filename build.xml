@@ -36,7 +36,7 @@
 
 	<target name="dist" depends="compile" description="generate the distribution">
 		<!-- Create the distribution directory -->
-		<jar jarfile="afsp.jar">
+		<jar jarfile="afsp.jar" compress="true">
 			<manifest>
 				<attribute name="Main-Class" value="edu.kit.tm.afsp.g1.Main" />
 				<attribute name="Class-Path" value="." />
@@ -48,6 +48,22 @@
 		</jar>
 	</target>
 
+	<target name="test" depends="compile">
+		<javac srcdir="test/" destdir="${build}">
+			<classpath>
+				<dirset dir="${build}" />
+				<fileset includes="*.jar" dir="lib/">
+				</fileset>
+			</classpath>
+		</javac>
+		<antcall target="dist" />
+
+		<java classname="edu.kit.tm.afsp.g1.TestMain">
+			<classpath>
+				<fileset file="afsp.jar" />
+			</classpath>
+		</java>
+	</target>
 
 
 	<target name="clean" description="clean up">
