@@ -26,7 +26,7 @@ public class LocalFileList extends LinkedList<File> {
      */
     private static final long serialVersionUID = 3832934914708172286L;
 
-    private Map<byte[], File> files = new HashMap<>();
+    private Map<String, File> files = new HashMap<>();
     private Map<File, byte[]> hashes = new HashMap<>();
     public static final String HASH_ALGORITHM = "SHA-512";
     private static Logger logger = LogManager.getLogger("afsp");
@@ -41,7 +41,7 @@ public class LocalFileList extends LinkedList<File> {
 	    // hash = calculateHash(f);
 	    hash = DigestUtils.md5(new FileInputStream(f));
 	    hashes.put(f, hash);
-	    files.put(hash, f);
+	    files.put(LocalFileList.md52str(hash), f);
 	    super.add(f);
 
 	    logger.debug("file added to local list " + f + " :: "
@@ -97,7 +97,7 @@ public class LocalFileList extends LinkedList<File> {
     }
 
     public File get(byte[] digest) {
-	return files.get(digest);
+	return files.get(LocalFileList.md52str(digest));
     }
 
     public int size() {
@@ -106,5 +106,10 @@ public class LocalFileList extends LinkedList<File> {
 
     public byte[] getDigest(File f) {
 	return hashes.get(f);
+    }
+
+    public long length() {
+	return toByteArray().length;// TODO optimize
+				    // size()*(2+6+16+string.length)
     }
 }

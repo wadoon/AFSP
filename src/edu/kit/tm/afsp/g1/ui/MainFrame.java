@@ -3,16 +3,21 @@ package edu.kit.tm.afsp.g1.ui;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.event.ActionEvent;
 import java.awt.geom.Point2D;
 import java.io.File;
+import java.io.IOException;
 
+import javax.swing.Action;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -21,7 +26,11 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
+import javax.swing.text.ChangedCharSetException;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.flexdock.docking.DockingManager;
@@ -29,6 +38,7 @@ import org.flexdock.view.View;
 import org.flexdock.view.Viewport;
 import org.jdesktop.swingx.JXCollapsiblePane;
 import org.jdesktop.swingx.JXCollapsiblePane.Direction;
+import org.jdesktop.swingx.JXErrorPane;
 import org.jdesktop.swingx.JXPanel;
 import org.jdesktop.swingx.JXTaskPane;
 import org.jdesktop.swingx.JXTaskPaneContainer;
@@ -57,6 +67,12 @@ public class MainFrame extends JFrame implements AFSPHostListener {
     private RemoteFileListTableModel remoteDataModel;
     private LocalFileListTableModel localDataModel;
 
+    private WAction actTCPRequestFileList = new TCPRequestFileListAction();
+    private WAction actTCPSendFileList = new TCPSendFileList();
+    private WAction actTCPDownloadFile = new TCPDownloadFile();
+
+    private File downloadDirectory = FileUtils.getUserDirectory();
+
     public MainFrame(AFSPHost host) {
 	afspHost = host;
 	afspHost.addListener(this);
@@ -79,16 +95,19 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 
 	Viewport viewport = new Viewport();
 	p.add(viewport, BorderLayout.CENTER);
-	
-	View hostView = initRightComponent();
+
+	View hostView = createLocalFileView();
 	View logView = createLogView();
-	View localFilesView = initLeftComponent();
+	View localFilesView = createNetworkView();
 	View actionView = createTaskbar();
 
+	DockingManager.setFloatingEnabled(true);
+	DockingManager.setAutoPersist(true);
+
 	viewport.dock(hostView);
-	hostView.dock(logView, DockingManager.SOUTH_REGION, .3f);
-	hostView.dock(localFilesView, DockingManager.EAST_REGION, .3f);
-	hostView.dock(actionView, DockingManager.WEST_REGION, .2f);
+	hostView.dock(logView, DockingManager.SOUTH_REGION, .7f);
+	hostView.dock(localFilesView, DockingManager.EAST_REGION, .5f);
+	hostView.dock(actionView, DockingManager.WEST_REGION, .5f);
 
 	//
 	// hostView.dock(view2, SOUTH_REGION, .3f);
@@ -99,9 +118,17 @@ public class MainFrame extends JFrame implements AFSPHostListener {
     }
 
     private View createLogView() {
-	View view = new View("logger", "Log");
+	View view = new View("logger", "Log", "Logger");
+
+	view.setIcon(new ImageIcon(getClass().getResource(
+		"assets/application_xp_terminal.png")));
+	view.getContentPane().setLayout(new BorderLayout());
+
+	JPanel p = new JPanel(new BorderLayout());
 	TableAppender ta = new TableAppender();
-	view.add(ta);
+	ta.setPreferredSize(new Dimension(1000, 300));
+	p.add(ta);
+	view.add(p);
 	return view;
     }
 
@@ -123,25 +150,39 @@ public class MainFrame extends JFrame implements AFSPHostListener {
     }
 
     private View createTaskbar() {
-	View view = new View("taskbar");
+	View view = new View("taskbar", "Task");
+	view.getContentPane().setLayout(new BorderLayout());
 	JXTaskPaneContainer container = new JXTaskPaneContainer();
 
-	JXTaskPane taskPane = new JXTaskPane("UDP");
-	taskPane.add(actUDPSignIn);
-	taskPane.add(actUDPSignOut);
-	taskPane.add(actUDPHeartbeat);
+	JXTaskPane test = new JXTaskPane("test");
+	test.add(new CloseAction());
+	test.add(new SelectDownloadFolder());
+	container.add(test);
 
-	container.add(taskPane);
+	JXTaskPane localFileTasks = new JXTaskPane("Local Files");
+	localFileTasks.add(actAddFile);
+	localFileTasks.add(actRemoveFile);
+	container.add(localFileTasks);
+
+	JXTaskPane taskUDPPane = new JXTaskPane("UDP");
+	taskUDPPane.add(actUDPSignIn);
+	taskUDPPane.add(actUDPSignOut);
+	taskUDPPane.add(actUDPHeartbeat);
+	container.add(taskUDPPane);
+
+	JXTaskPane taskTCPPane = new JXTaskPane("TCP");
+	taskTCPPane.add(actTCPRequestFileList);
+	taskTCPPane.add(actTCPSendFileList);
+	taskTCPPane.add(actTCPDownloadFile);
+	container.add(taskTCPPane);
+
 	view.add(container);
 	return view;
     }
 
-    /**
-     * @param mainFrame
-     * @return
-     */
-    private View initRightComponent() {
-	View view = new View("host.view", "Network");
+    private View createLocalFileView() {
+	View view = new View("localfiles", "Local Files");
+	view.getContentPane().setLayout(new BorderLayout());
 	JPanel p = new JPanel(new BorderLayout());
 
 	tblLocalFiles = new JTable();
@@ -156,6 +197,9 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 	tblLocalFiles.setShowVerticalLines(false);
 	tblLocalFiles.setRowSelectionAllowed(true);
 
+	tcaLocalTable = new TableColumnAdjuster(tblLocalFiles);
+	tcaLocalTable.adjustColumns();
+
 	Box buttons = new Box(BoxLayout.X_AXIS);
 	buttons.add(Box.createGlue());
 	buttons.add(btnRemoveFile);
@@ -168,26 +212,32 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 	return view;
     }
 
-    private View initLeftComponent() {
-	View view = new View("localfiles", "Local Files");
+    TableColumnAdjuster tcaRemoteTable, tcaLocalTable;
+
+    private View createNetworkView() {
+	View view = new View("network", "Network");
+	view.getContentPane().setLayout(new BorderLayout());
 	JPanel p = new JPanel(new BorderLayout());
 
 	tblRemoteFiles = new JTable();
 	remoteDataModel = new RemoteFileListTableModel(afspHost);
 	tblRemoteFiles.setModel(remoteDataModel);
 
-	tblRemoteFiles.setRowSelectionAllowed(true);
 	tblRemoteFiles.setColumnSelectionAllowed(false);
 	tblRemoteFiles.setCellSelectionEnabled(false);
+	tblRemoteFiles.setShowVerticalLines(false);
+	tblRemoteFiles.setRowSelectionAllowed(true);
 
 	remoteDataModel.update();
 
+	tcaRemoteTable = new TableColumnAdjuster(tblRemoteFiles);
+	tcaRemoteTable.adjustColumns();
+
 	Box buttons = new Box(BoxLayout.X_AXIS);
 	buttons.add(Box.createGlue());
-	// buttons.add(btnRemoveFile);
-	// buttons.add(btnAddFile);
-
-	buttons.add(new JButton("TEST"));
+	buttons.add(new JButton(actTCPDownloadFile));
+	buttons.add(new JButton(actTCPSendFileList));
+	buttons.add(new JButton(actTCPRequestFileList));
 	p.add(new JScrollPane(tblRemoteFiles));
 	p.add(buttons, BorderLayout.SOUTH);
 
@@ -196,44 +246,69 @@ public class MainFrame extends JFrame implements AFSPHostListener {
     }
 
     class UDPSignInAction extends WAction {
+	private static final long serialVersionUID = -9022451576733958350L;
+
 	public UDPSignInAction() {
-	    setText("SignIn ->");
+	    setText("SignIn");
+	    setAsset("connect");
 	}
 
 	@Override
 	public void actionPerformed(ActionEvent e) {
 	    logger.debug("send signin, requested by user");
+	    try {
+		afspHost.signin();
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
 	}
     }
 
     class UDPSignOutAction extends WAction {
+	private static final long serialVersionUID = 848598212549264585L;
+
 	public UDPSignOutAction() {
-	    setText("SignOut ->");
+	    setText("SignOut");
+	    setAsset("disconnect");
 	}
 
 	@Override
 	public void actionPerformed(ActionEvent e) {
 	    logger.debug("send signout, requested by user");
+	    try {
+		afspHost.signout();
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
 	}
     }
 
     class UDPHeartbeatAction extends WAction {
+	private static final long serialVersionUID = 3328506465379579293L;
+
 	public UDPHeartbeatAction() {
-	    setText("Heartbeat ->");
+	    setText("Heartbeat");
+	    setAsset("heart");
 	}
 
 	@Override
 	public void actionPerformed(ActionEvent e) {
-	    logger.debug("send signout, requested by user");
+	    logger.debug("send heartbeat, requested by user");
+	    try {
+		afspHost.heartbeat();
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
 	}
     }
 
     class AddFileAction extends WAction {
 	private static final long serialVersionUID = 1045963004149071917L;
-	JFileChooser jfc = new JFileChooser(".");
+	JFileChooser jfc = new JFileChooser(FileUtils.getUserDirectory());
 
 	public AddFileAction() {
 	    setName("Add File");
+	    setAsset("add");
 	    jfc.setMultiSelectionEnabled(true);
 	}
 
@@ -251,8 +326,10 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 		}
 		afspHost.onFilesListUpdated();
 		localDataModel.fireTableDataChanged();
+		tcaLocalTable.adjustColumns();
 		invalidate();
 		repaint();
+
 	    }
 	}
     }
@@ -262,6 +339,7 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 
 	public RemoveFileAction() {
 	    setName("Del File");
+	    setAsset("delete");
 	}
 
 	@Override
@@ -277,10 +355,134 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 		afspHost.getLocalFiles().remove(file);
 	    }
 	    afspHost.onFilesListUpdated();
-
 	    localDataModel.fireTableRowsDeleted(idx[0], idx[idx.length - 1]);
+	    tcaLocalTable.adjustColumns();
 	    invalidate();
 	    repaint();
+	}
+    }
+
+    class TCPRequestFileListAction extends WAction {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 8131996377989194539L;
+
+	public TCPRequestFileListAction() {
+	    setName("Req. File List");
+	    setAsset("folder_explore");
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+
+	    TableEntry te = remoteDataModel.getEntry(tblRemoteFiles
+		    .getSelectedRow());
+	    logger.debug("request filelist from: " + te);
+
+	    try {
+		afspHost.exchange_filelist_req(te.getForeignHost());
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
+	}
+    }
+
+    class TCPSendFileList extends WAction {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -8243357669935903813L;
+
+	public TCPSendFileList() {
+	    setText("Send FileList");
+	    setAsset("email_go");
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+	    logger.debug("file xchg by user");
+	    int i = tblRemoteFiles.getSelectedRow();
+	    TableEntry te = remoteDataModel.getEntry(i);
+	    logger.debug("table entry: " + te);
+
+	    try {
+		afspHost.exchange_filelist(te.getForeignHost());
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
+
+	}
+    }
+
+    class TCPDownloadFile extends WAction {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 6508260632607701044L;
+
+	public TCPDownloadFile() {
+	    setText("Download");
+	    setAsset("control_fastforward_blue");
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+	    logger.debug("download request by user");
+
+	    int i = tblRemoteFiles.getSelectedRow();
+	    TableEntry te = remoteDataModel.getEntry(i);
+	    logger.debug("table entry: " + te);
+
+	    File target = new File(downloadDirectory, te.getFilename());
+	    logger.info("download target is " + target.getAbsolutePath());
+	    try {
+		afspHost.download(te.getForeignHost(), te.getDigest(), target);
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
+
+	}
+    }
+
+    class CloseAction extends WAction {
+	public CloseAction() {
+	    setText("Exit");
+	    setAsset("bomb");
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+	    try {
+		afspHost.signout();
+	    } catch (IOException e1) {
+		logger.error(e1);
+	    }
+	    afspHost.quit();
+	    System.exit(0);
+	}
+    }
+
+    class SelectDownloadFolder extends WAction {
+	private static final long serialVersionUID = -6638753153441018855L;
+
+	private JFileChooser jfc = new JFileChooser(downloadDirectory);
+
+	public SelectDownloadFolder() {
+	    setText("Slct DwnldFldr");
+	    setAsset("basket");
+
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+	    int c = jfc.showOpenDialog(MainFrame.this);
+	    if (c == JFileChooser.APPROVE_OPTION) {
+		downloadDirectory = jfc.getSelectedFile().getParentFile();
+		logger.info("changed download folder to: "
+			+ downloadDirectory.getAbsolutePath());
+	    }
 	}
     }
 
@@ -289,5 +491,7 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 	remoteDataModel.fireTableDataChanged();
 	remoteDataModel.update();
 	remoteDataModel.fireTableDataChanged();
+	tcaRemoteTable.adjustColumns();
     }
+
 }

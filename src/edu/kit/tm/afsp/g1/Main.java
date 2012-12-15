@@ -6,6 +6,9 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.plaf.nimbus.NimbusLookAndFeel;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,7 +19,9 @@ public class Main {
     private static final byte _255 = (byte) 0xff;
     private static final int PORT = 8888;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, UnsupportedLookAndFeelException {
+
+	UIManager.setLookAndFeel(new NimbusLookAndFeel());
 
 	Logger logger = LogManager.getLogger("afsp");
 	InetAddress broadcast = InetAddress.getByAddress(new byte[] { _255,
@@ -32,7 +37,7 @@ public class Main {
 	logger.debug("starting client");
 	AFSPHost host = new AFSPHost("weigla", tcpaddr, PORT, udpaddr,
 		broadcast);
-	
+
 	final MainFrame mf = new MainFrame(host);
 	SwingUtilities.invokeLater(new Runnable() {
 	    @Override

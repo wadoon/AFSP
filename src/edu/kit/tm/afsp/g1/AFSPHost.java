@@ -1,12 +1,12 @@
 package edu.kit.tm.afsp.g1;
 
-import java.awt.BorderLayout;
-import java.awt.Component;
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -18,27 +18,17 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
-import edu.kit.tm.afsp.g1.ui.LocalFileListTableModel;
-import edu.kit.tm.afsp.g1.ui.MainFrame;
 
 public class AFSPHost {
     private static final int DIGEST_LENGTH_BYTE = 16;
@@ -52,12 +42,14 @@ public class AFSPHost {
     private LocalFileList localFileList = new LocalFileList();
     private Thread tcpServerThread;
     private Thread udpServerThread;
-    private Timer timer = new Timer("HEARTBEAT", true);
+    private Timer timer;
 
-    private static Logger LOGGER = LogManager.getLogger("afsp");
+    private static Logger logger = LogManager.getLogger("afsp");
 
     private ExecutorService exeService = Executors.newCachedThreadPool();
     private LinkedList<AFSPHostListener> listeners = new LinkedList<>();
+
+    private HeartBeatTimer heartBeatTimer = new HeartBeatTimer();
 
     public AFSPHost(String pseudonym, SocketAddress serverAddress, int port,
 	    SocketAddress udpAddress, InetAddress broadcastAddr)
@@ -77,13 +69,74 @@ public class AFSPHost {
 	udpServerThread = new UDPServerThread();
 	udpServerThread.start();
 	tcpServerThread.start();
-
-	// every 10 seconds
-	timer.schedule(new HeartBeatTimer(), 10 * 1000, 10 * 1000);
     }
 
-    public void download(ForeignHost fh, byte[] digest) {
-	// TODO
+    public void download(ForeignHost fh, byte[] digest, File target)
+	    throws IOException {
+	logger.trace("AFSP.download " + fh + "," + target);
+
+	// TODO start in a worker thread
+	Header header = Header.create(MessageType.DOWNLOAD_REQ, pseudonym,
+		DIGEST_LENGTH_BYTE);
+	Socket client = openClientSocket(fh, header);
+	OutputStream os = client.getOutputStream();
+
+	os.write(digest);
+	os.flush();
+
+	InputStream is = client.getInputStream();
+	Header answer = new Header(is);
+
+	logger.info("got answer " + answer + " for " + header);
+
+	switch (answer.getMessageType()) {
+	case DOWNLOAD_ACK:
+	    // go ahead
+	    break;
+	case DOWNLOAD_ERR:
+	    logger.error("DOWNLOAD_ERR received!");
+	    IOUtils.closeQuietly(client);
+	    return;
+	default:
+	    logger.fatal("client " + fh
+		    + " have sent wrong messagetype of dwnld_rq " + header);
+	    IOUtils.closeQuietly(client);
+	    return;
+	}
+
+	Header ack;
+	try {
+	    FileOutputStream fos = new FileOutputStream(target);
+	    BufferedOutputStream bos = new BufferedOutputStream(fos);
+
+	    logger.info("reading stream, length should be: "
+		    + answer.getLength());
+	    long count = copyLarge(is, bos, answer.getLength());
+
+	    IOUtils.closeQuietly(bos);
+
+	    logger.info("stream read, file wrote");
+
+	    if (count != answer.getLength()) {
+		logger.fatal("length mismatch of file  and answer.length");
+	    }
+	    logger.debug("compare of hashsum");
+
+	    byte[] hash = DigestUtils.md5(new FileInputStream(target));
+
+	    logger.debug("got hashsum: " + LocalFileList.md52str(hash)
+		    + " should " + LocalFileList.md52str(digest));
+	    ack = Header.create(
+		    Arrays.equals(hash, digest) ? MessageType.DOWNLOAD_ACK
+			    : MessageType.DOWNLOAD_ERR, pseudonym, 0);
+	} catch (Exception e) {
+	    ack = Header.create(MessageType.DOWNLOAD_ERR, pseudonym, 0);
+	}
+
+	logger.debug("send state of download: " + ack);
+	os.write(ack.toByteArray());
+	os.flush();
+	IOUtils.closeQuietly(client);
     }
 
     public void sendEmptyUDP(MessageType mt) throws IOException {
@@ -92,7 +145,7 @@ public class AFSPHost {
 	h.setLength(0);
 	h.setMessageType(mt);
 
-	LOGGER.info("info send empty udp-datagram with: " + h + " to: "
+	logger.info("info send empty udp-datagram with: " + h + " to: "
 		+ broadcastAddress + ":" + port);
 
 	byte buf[] = h.toByteArray();
@@ -100,23 +153,34 @@ public class AFSPHost {
 	outgoing.setPort(port);
 	outgoing.setAddress(broadcastAddress);
 	udpSocket.send(outgoing);
-	LOGGER.info("sent");
+	logger.info("sent");
     }
 
     public void signin() throws IOException {
-	LOGGER.info("send signin");
+	logger.info("send signin");
 	sendEmptyUDP(MessageType.SIGNIN);
+
+	logger.info("start HeartBeatTimer");
+
+	if (timer != null) // cancel all heartbeat timers
+	    timer.cancel();
+	timer = new Timer("HEARTBEAT", true);
+	timer.schedule(heartBeatTimer, 10 * 1000, 10 * 1000);
     }
 
     public void signout() throws IOException {
-	LOGGER.info("send signout");
+	logger.info("send signout");
 	sendEmptyUDP(MessageType.SIGNOUT);
+
+	// cancel heartbeat
+	if (timer != null)
+	    timer.cancel();
     }
 
     public Socket openClientSocket(ForeignHost fh, Header header)
 	    throws IOException {
-	LOGGER.info("open tcp socket to: " + fh.getAddr() + ":" + port);
-	LOGGER.info("send header: " + header);
+	logger.info("open tcp socket to: " + fh.getAddr() + ":" + port);
+	logger.info("send header: " + header);
 
 	Socket s = new Socket(fh.getAddr(), port);
 	OutputStream os = s.getOutputStream();
@@ -125,23 +189,42 @@ public class AFSPHost {
     }
 
     public void signin_ack(ForeignHost fh) throws IOException {
-	LOGGER.debug("signin_ack to: " + fh);
+	logger.debug("signin_ack to: " + fh);
 	Header h = Header.create(MessageType.SIGNIN_ACK, pseudonym, 0);
 	Socket s = openClientSocket(fh, h);
 	IOUtils.closeQuietly(s);
     }
 
+    public void exchange_filelist(ForeignHost fh) throws IOException {
+	logger.info("open tcp socket to: " + fh.getAddr() + ":" + port);
+	Socket s = new Socket(fh.getAddr(), port);
+	try {
+	    sendFilelist(s);
+	} catch (IOException e) {
+	    logger.error("error at sending filelist", e);
+	}
+	IOUtils.closeQuietly(s);
+    }
+
     public void exchange_filelist_req(ForeignHost fh) throws IOException {
-	LOGGER.info("exchange filelist request to: " + fh);
+	logger.info("exchange filelist request to: " + fh);
 	Header h = Header.create(MessageType.EXCHANGE_FILELIST_REQ, pseudonym,
 		0);
-	Socket s = openClientSocket(fh, h);
+	Socket client = openClientSocket(fh, h);
+	readFileList(fh, client);
+	firePeerUpdate();
+    }
 
-	InputStream is = s.getInputStream();
+    public static void readFileList(ForeignHost fh, Socket client)
+	    throws IOException {
+	logger.info("reading file list");
+	InputStream is = client.getInputStream();
 	Header inHeader = new Header(is);
 
 	byte[] content = new byte[(int) inHeader.getLength()];
 	IOUtils.readFully(is, content);
+
+	logger.info(content.length + " bytes received");
 
 	ByteArrayInputStream bais = new ByteArrayInputStream(content);
 	DataInputStream inputStream = new DataInputStream(bais);
@@ -151,109 +234,126 @@ public class AFSPHost {
 
     public static void parseFileList(ForeignHost fh, DataInputStream inputStream)
 	    throws IOException {
+	logger.debug("parse file list");
 	while (inputStream.available() >= 1) {
-	    byte[] digest = new byte[DIGEST_LENGTH_BYTE];// TODO SHA512
+	    byte[] digest = new byte[DIGEST_LENGTH_BYTE];// TODO MD5
 
 	    long length = Header.read6ByteInt(inputStream);
 	    short fileNameLength = inputStream.readShort();
 	    IOUtils.readFully(inputStream, digest);
 	    String filename = Header.readUTF(inputStream, fileNameLength);
 
-	    LOGGER.debug("parsed " + length + "," + fileNameLength + ","
+	    logger.debug("parsed " + length + "," + fileNameLength + ","
 		    + filename + "," + LocalFileList.md52str(digest));
-
 	    fh.addFile(filename, digest, length);
 	}
     }
 
-    public void sendHeartbeat() throws IOException {
-	LOGGER.info("send heartbeat");
+    public void heartbeat() throws IOException {
+	logger.info("send heartbeat");
 	sendEmptyUDP(MessageType.HEARTBEAT);
     }
 
     @SuppressWarnings("incomplete-switch")
     private void handleTCPRequest(Socket client) throws IOException {
-	LOGGER.info("handleTCPRequest of " + client.getRemoteSocketAddress());
+	logger.info("handleTCPRequest of " + client.getRemoteSocketAddress());
 
 	InputStream is = client.getInputStream();
 	Header h = new Header(is);
 	ForeignHost fh = getKnownHost(client.getInetAddress(), h);
 
-	LOGGER.info("Header: " + h);
-	LOGGER.info("ForeignHost Info: " + fh);
+	logger.info("Header: " + h);
+	logger.info("ForeignHost Info: " + fh);
 
 	switch (h.getMessageType()) {
-	case EXCHANGE_FILELIST:
-	    exchange_filelist(client);
+	case EXCHANGE_FILELIST_REQ: // request for filelist
+	    sendFilelist(client);
+	    break;
+	case EXCHANGE_FILELIST: // remote want to send filelist
+	    // e.g. after signin
+	    parseFileList(fh, new DataInputStream(is));
+	    firePeerUpdate();
 	    break;
 	case DOWNLOAD_REQ:
-	    download_rpl(client);
+	    download_rpl(h, client);
+	    break;
+	case SIGNIN_ACK:
+	    // TODO
 	    break;
 	}
-	LOGGER.info("end request handling, closing socket");
+	logger.info("end request handling, closing socket");
 	client.close();
     }
 
-    private void download_rpl(Socket client) throws IOException {
+    private void download_rpl(Header h, Socket client) throws IOException {
 	InputStream is = client.getInputStream();
 	OutputStream os = client.getOutputStream();
 
-	byte[] digest = null;// TODO read out hash value
+	logger.debug("handle download for " + client.getRemoteSocketAddress());
+
+	if (h.getLength() != DIGEST_LENGTH_BYTE) {
+	    logger.fatal("length mismatch, md5 is 16 byte, got: "
+		    + h.getLength());
+	}
+
+	byte[] digest = new byte[(int) h.getLength()];
+	IOUtils.readFully(is, digest);
 	File fil = localFileList.get(digest);
 
 	if (fil == null) {
-	    Header h = Header.create(MessageType.DOWNLOAD_ERR, pseudonym, 0);
-	    os.write(h.toByteArray());
-	    os.close();
-	    client.close();
+	    Header resp = Header.create(MessageType.DOWNLOAD_ERR, pseudonym, 0);
+	    os.write(resp.toByteArray());
+	    os.flush();
+	    IOUtils.closeQuietly(client);
 	} else {
 	    BufferedInputStream bis = new BufferedInputStream(
 		    new FileInputStream(fil));
-	    Header h = Header.create(MessageType.DOWNLOAD_RPL, pseudonym,
+	    Header resp = Header.create(MessageType.DOWNLOAD_ACK, pseudonym,
 		    fil.length());
 
-	    os.write(h.toByteArray());
+	    os.write(resp.toByteArray());
 	    IOUtils.copy(bis, os);
+	    IOUtils.closeQuietly(bis);
+	    // IOUtils.closeQuietly(os);
 
 	    Header response = new Header(is);
 	    switch (response.getMessageType()) {
 	    case DOWNLOAD_ACK:
-		LOGGER.info("Download successful");
+		logger.info("Download successful");
 		break;
 	    case DOWNLOAD_ERR:
-		LOGGER.info("Download unsuccessful");
+		logger.info("Download unsuccessful");
 		break;
 	    default:
-		LOGGER.info("no valid download response");
+		logger.fatal("no valid download response");
 		break;
 	    }
 	}
     }
 
-    private void exchange_filelist(Socket client) throws IOException {
-	LOGGER.debug("handle EXCHANGE_FILELIST");
+    private void sendFilelist(Socket client) throws IOException {
+	logger.debug("send filelist to client");
 
 	byte[] b = localFileList.toByteArray();
 	Header h = Header.create(MessageType.EXCHANGE_FILELIST, pseudonym,
 		b.length);
 
-	LOGGER.debug("send header: " + h);
-	LOGGER.debug("send DATA: " + Arrays.toString(b));
+	logger.debug("send header: " + h);
+	logger.debug("send DATA: " + Arrays.toString(b));
 
 	OutputStream os = client.getOutputStream();
 	os.write(h.toByteArray());
 	os.write(b);
 	os.flush();
-	IOUtils.closeQuietly(os);
     }
 
     @SuppressWarnings("incomplete-switch")
     private void handleUDPRequest(DatagramPacket packet) throws IOException {
-	LOGGER.debug("handle udp request");
+	logger.debug("handle udp request");
 
 	Header h = new Header(packet);
 
-	LOGGER.info("got header: " + h);
+	logger.info("got header: " + h);
 
 	switch (h.getMessageType()) {
 	case SIGNIN:
@@ -274,7 +374,7 @@ public class AFSPHost {
     }
 
     private void removeFromKnownHost(DatagramPacket packet, Header h) {
-	ForeignHost fh = new ForeignHost(packet.getAddress(), h.getPseudonym());
+	ForeignHost fh = getKnownHost(packet.getAddress(), h);
 	knownHosts.remove(fh);
     }
 
@@ -292,7 +392,7 @@ public class AFSPHost {
 	@Override
 	public void run() {
 	    try {
-		sendHeartbeat();
+		heartbeat();
 	    } catch (IOException e) {
 		e.printStackTrace();
 	    }
@@ -312,7 +412,7 @@ public class AFSPHost {
 		    Runnable clientThread = new TCPClientThread(clientSocket);
 		    exeService.execute(clientThread);
 		} catch (IOException e) {
-		    LOGGER.error("tcp-thread", e);
+		    logger.error("tcp-thread", e);
 		}
 	    }
 	}
@@ -335,7 +435,7 @@ public class AFSPHost {
 		    UDPClientThread clientThread = new UDPClientThread(p);
 		    exeService.execute(clientThread);
 		} catch (IOException e) {
-		    LOGGER.error("Error in udp-thread");
+		    logger.error("Error in udp-thread");
 		}
 	    }
 
@@ -354,7 +454,7 @@ public class AFSPHost {
 	    try {
 		handleUDPRequest(p);
 	    } catch (IOException e) {
-		LOGGER.error("Error in udp-thread: " + p.getAddress(), e);
+		logger.error("Error in udp-thread: " + p.getAddress(), e);
 	    }
 	}
     }
@@ -369,12 +469,12 @@ public class AFSPHost {
 	@Override
 	public void run() {
 	    try {
-		LOGGER.info("started clientThread for "
+		logger.info("started clientThread for "
 			+ client.getRemoteSocketAddress());
 
 		handleTCPRequest(client);
 	    } catch (IOException e) {
-		LOGGER.error(
+		logger.error(
 			"Error in client thread: "
 				+ client.getRemoteSocketAddress(), e);
 	    }
@@ -383,25 +483,25 @@ public class AFSPHost {
 
     public void serve() {
 	try {
-	    LOGGER.debug("wainting for tcpServerThread to close");
+	    logger.debug("waiting for tcpServerThread to close");
 	    tcpServerThread.join();
 	} catch (InterruptedException e) {
-	    LOGGER.error(e);
+	    logger.error(e);
 	}
     }
 
     @SuppressWarnings("deprecation")
     public void quit() {
-	LOGGER.debug("quit requested by method call");
+	logger.debug("quit requested by method call");
 
-	LOGGER.debug("tear down udpSocket");
+	logger.debug("tear down udpSocket");
 	udpSocket.close();
 
 	try {
-	    LOGGER.debug("tear down tcpServerSocket");
+	    logger.debug("tear down tcpServerSocket");
 	    tcpServerSocket.close();
 	} catch (IOException e) {
-	    LOGGER.error("Error on quitting", e);
+	    logger.error("Error on quitting", e);
 	    tcpServerThread.stop();
 	}
     }
@@ -411,8 +511,15 @@ public class AFSPHost {
     }
 
     public void onFilesListUpdated() {
-	LOGGER.debug("filelist change -> send info to peers");
+	logger.debug("filelist change -> send info to peers");
 	// TODO SEND EXCHG FILELIST TO ALL PEERS
+	for (ForeignHost fh : knownHosts) {
+	    try {
+		exchange_filelist(fh);
+	    } catch (IOException e) {
+		logger.error(e);
+	    }
+	}
     }
 
     public void addListener(AFSPHostListener lis) {
@@ -420,7 +527,7 @@ public class AFSPHost {
     }
 
     public void firePeerUpdate() {
-	LOGGER.debug("firePeerUpdate");
+	logger.debug("firePeerUpdate");
 	for (AFSPHostListener lis : listeners) {
 	    lis.onPeerUpdate();
 	}
@@ -429,4 +536,24 @@ public class AFSPHost {
     public List<ForeignHost> getForeignHosts() {
 	return knownHosts;
     }
+
+    private static final int EOF = -1;
+    private static final int BUFFER_SIZE = 5 * 1024 * 1024;
+
+    public static long copyLarge(InputStream input, OutputStream output,
+	    long max) throws IOException {
+	byte buffer[] = new byte[BUFFER_SIZE];
+	long count = 0;
+	int n = 0;
+	while (EOF != (n = input.read(buffer))) {
+	    output.write(buffer, 0, n);
+	    count += n;
+
+	    if (count >= max) {
+		break;
+	    }
+	}
+	return count;
+    }
+
 }

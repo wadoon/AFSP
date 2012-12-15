@@ -1,5 +1,6 @@
 package edu.kit.tm.afsp.g1.ui;
 
+import java.awt.Color;
 import java.awt.Component;
 import java.io.Serializable;
 import java.text.DateFormat;
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import javax.swing.JLabel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.table.AbstractTableModel;
@@ -27,7 +29,7 @@ import org.apache.logging.log4j.message.SimpleMessage;
 public class TableAppender extends JScrollPane {
     private static final long serialVersionUID = 1L;
     private LogTableModel model = new LogTableModel();
-    private JTable tbl = new JTable();
+    JTable tbl = new JTable();
     private TableColumnAdjuster tableColumnAdjuster;
 
     public TableAppender() {
@@ -43,6 +45,7 @@ public class TableAppender extends JScrollPane {
 	tbl.setColumnSelectionAllowed(false);
 	tbl.setRowSelectionAllowed(true);
 
+	tbl.setDefaultRenderer(String.class, new DefaultLogTableRenderer());
 	tbl.setDefaultRenderer(Long.class, new MilliSecondRender());
 	tbl.setDefaultRenderer(Marker.class, new MarkerRender());
 	tbl.setDefaultRenderer(Level.class, new LevelRender());
@@ -180,69 +183,106 @@ public class TableAppender extends JScrollPane {
 
 	}
     }
-}
 
-class MilliSecondRender extends DefaultTableCellRenderer {
+    class DefaultLogTableRenderer extends DefaultTableCellRenderer {
+	@Override
+	public Component getTableCellRendererComponent(JTable table,
+		Object value, boolean isSelected, boolean hasFocus, int row,
+		int column) {
+	    JLabel lbl = (JLabel) super.getTableCellRendererComponent(table,
+		    value, isSelected, hasFocus, row, column);
 
-    private static final long serialVersionUID = 1L;
+	    LogEvent le = model.events.get(row);
 
-    static DateFormat df = new SimpleDateFormat("h:m:s.S");
+	    setForeground(Color.BLACK);
+	    Color c;
+	    switch (le.getLevel()) {
+	    case FATAL:
+		c = Color.BLACK;
+		setForeground(Color.WHITE);
+		break;
+	    case ERROR:
+		c = new Color(250, 200, 200);
+		break;
+	    case INFO:
+		c = new Color(200, 220, 250);
+		break;
+	    case DEBUG:
+		c = new Color(220, 220, 220);
+		break;
+	    default:
+		c = Color.WHITE;
+		break;
+	    }
+	    lbl.setOpaque(true);
+	    lbl.setBackground(c);
 
-    @Override
-    public Component getTableCellRendererComponent(JTable table, Object value,
-	    boolean isSelected, boolean hasFocus, int row, int column) {
-
-	long l = (Long) value;
-	value = df.format(new Date(l));
-
-	return super.getTableCellRendererComponent(table, value, isSelected,
-		hasFocus, row, column);
-    }
-}
-
-class MarkerRender extends DefaultTableCellRenderer {
-
-    private static final long serialVersionUID = 1L;
-
-    @Override
-    public Component getTableCellRendererComponent(JTable table, Object value,
-	    boolean isSelected, boolean hasFocus, int row, int column) {
-	if (value != null) {
-	    Marker mark = (Marker) value;
-	    value = mark.getName();
+	    return lbl;
 	}
-	return super.getTableCellRendererComponent(table, value, isSelected,
-		hasFocus, row, column);
     }
-}
 
-class LevelRender extends DefaultTableCellRenderer {
+    class MilliSecondRender extends DefaultLogTableRenderer {
 
-    private static final long serialVersionUID = 1L;
+	private static final long serialVersionUID = 1L;
+	private DateFormat df = new SimpleDateFormat("h:m:s.S");
 
-    @Override
-    public Component getTableCellRendererComponent(JTable table, Object value,
-	    boolean isSelected, boolean hasFocus, int row, int column) {
-	Level lvl = (Level) value;
-	value = lvl.name();
-	return super.getTableCellRendererComponent(table, value, isSelected,
-		hasFocus, row, column);
+	@Override
+	public Component getTableCellRendererComponent(JTable table,
+		Object value, boolean isSelected, boolean hasFocus, int row,
+		int column) {
+
+	    long l = (Long) value;
+	    value = df.format(new Date(l));
+
+	    return super.getTableCellRendererComponent(table, value,
+		    isSelected, hasFocus, row, column);
+	}
     }
-}
 
-class MessageRender extends DefaultTableCellRenderer {
+    class MarkerRender extends DefaultLogTableRenderer {
 
-    private static final long serialVersionUID = 1L;
+	private static final long serialVersionUID = 1L;
 
-    @Override
-    public Component getTableCellRendererComponent(JTable table, Object value,
-	    boolean isSelected, boolean hasFocus, int row, int column) {
+	@Override
+	public Component getTableCellRendererComponent(JTable table,
+		Object value, boolean isSelected, boolean hasFocus, int row,
+		int column) {
+	    if (value != null) {
+		Marker mark = (Marker) value;
+		value = mark.getName();
+	    }
+	    return super.getTableCellRendererComponent(table, value,
+		    isSelected, hasFocus, row, column);
+	}
+    }
 
-	Message msg = (Message) value;
-	value = msg.getFormattedMessage();
-	System.out.println(value);
+    class LevelRender extends DefaultLogTableRenderer {
 
-	return super.getTableCellRendererComponent(table, value, isSelected,
-		hasFocus, row, column);
+	private static final long serialVersionUID = 1L;
+
+	@Override
+	public Component getTableCellRendererComponent(JTable table,
+		Object value, boolean isSelected, boolean hasFocus, int row,
+		int column) {
+	    Level lvl = (Level) value;
+	    value = lvl.name();
+	    return super.getTableCellRendererComponent(table, value,
+		    isSelected, hasFocus, row, column);
+	}
+    }
+
+    class MessageRender extends DefaultLogTableRenderer {
+
+	private static final long serialVersionUID = 1L;
+
+	@Override
+	public Component getTableCellRendererComponent(JTable table,
+		Object value, boolean isSelected, boolean hasFocus, int row,
+		int column) {
+	    Message msg = (Message) value;
+	    value = msg.getFormattedMessage();
+	    return super.getTableCellRendererComponent(table, value,
+		    isSelected, hasFocus, row, column);
+	}
     }
 }

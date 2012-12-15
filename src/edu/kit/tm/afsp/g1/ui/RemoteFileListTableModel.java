@@ -2,6 +2,7 @@ package edu.kit.tm.afsp.g1.ui;
 
 import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -90,6 +91,10 @@ public class RemoteFileListTableModel extends AbstractTableModel {
 
 	fireTableDataChanged();
     }
+
+    public TableEntry getEntry(int i) {
+	return entries.get(i);
+    }
 }
 
 class TableEntry {
@@ -110,4 +115,81 @@ class TableEntry {
 	    long length, byte[] digest) {
 	return new TableEntry(foreignHost, filename, digest, length);
     }
+
+    public ForeignHost getForeignHost() {
+	return fh;
+    }
+
+    public void setFh(ForeignHost fh) {
+	this.fh = fh;
+    }
+
+    public String getFilename() {
+	return filename;
+    }
+
+    public void setFilename(String filename) {
+	this.filename = filename;
+    }
+
+    public byte[] getDigest() {
+	return digest;
+    }
+
+    public void setDigest(byte[] digest) {
+	this.digest = digest;
+    }
+
+    public long getLength() {
+	return length;
+    }
+
+    public void setLength(long length) {
+	this.length = length;
+    }
+
+    @Override
+    public String toString() {
+	return "TableEntry [fh=" + fh + ", filename=" + filename + ", digest="
+		+ Arrays.toString(digest) + ", length=" + length + "]";
+    }
+
+    @Override
+    public int hashCode() {
+	final int prime = 31;
+	int result = 1;
+	result = prime * result + Arrays.hashCode(digest);
+	result = prime * result + ((fh == null) ? 0 : fh.hashCode());
+	result = prime * result
+		+ ((filename == null) ? 0 : filename.hashCode());
+	result = prime * result + (int) (length ^ (length >>> 32));
+	return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+	if (this == obj)
+	    return true;
+	if (obj == null)
+	    return false;
+	if (getClass() != obj.getClass())
+	    return false;
+	TableEntry other = (TableEntry) obj;
+	if (!Arrays.equals(digest, other.digest))
+	    return false;
+	if (fh == null) {
+	    if (other.fh != null)
+		return false;
+	} else if (!fh.equals(other.fh))
+	    return false;
+	if (filename == null) {
+	    if (other.filename != null)
+		return false;
+	} else if (!filename.equals(other.filename))
+	    return false;
+	if (length != other.length)
+	    return false;
+	return true;
+    }
+
 }

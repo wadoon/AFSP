@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 
@@ -12,7 +13,7 @@ public class ForeignHost {
     private String pseudonym;
     private Date lastSeen;
 
-    private Collection<String> publicFiles = new LinkedList<>();
+    private Collection<String> publicFiles = new HashSet<>();
     private Map<String, byte[]> publicFilesHashes = new HashMap<>();
     private Map<String, Long> publicFilesLengths = new HashMap<>();
 
@@ -73,8 +74,6 @@ public class ForeignHost {
 	final int prime = 31;
 	int result = 1;
 	result = prime * result + ((addr == null) ? 0 : addr.hashCode());
-	result = prime * result
-		+ ((pseudonym == null) ? 0 : pseudonym.hashCode());
 	return result;
     }
 
@@ -91,11 +90,6 @@ public class ForeignHost {
 	    if (other.addr != null)
 		return false;
 	} else if (!addr.equals(other.addr))
-	    return false;
-	if (pseudonym == null) {
-	    if (other.pseudonym != null)
-		return false;
-	} else if (!pseudonym.equals(other.pseudonym))
 	    return false;
 	return true;
     }
