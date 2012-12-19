@@ -35,7 +35,7 @@ public class Main {
 	SocketAddress tcpaddr = new InetSocketAddress(PORT);
 
 	logger.debug("starting client");
-	AFSPHost host = new AFSPHost("weigla", tcpaddr, PORT, udpaddr,
+	AFSPHost host = new AFSPHost("default", tcpaddr, PORT, udpaddr,
 		broadcast);
 
 	final MainFrame mf = new MainFrame(host);

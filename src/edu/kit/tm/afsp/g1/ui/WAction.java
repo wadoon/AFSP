@@ -1,7 +1,6 @@
 package edu.kit.tm.afsp.g1.ui;
 
 import java.net.URL;
-
 import javax.swing.AbstractAction;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
