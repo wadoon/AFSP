@@ -35,6 +35,7 @@ import org.jdesktop.swingx.JXTaskPaneContainer;
 import org.jdesktop.swingx.painter.RectanglePainter;
 import edu.kit.tm.afsp.g1.AFSPHost;
 import edu.kit.tm.afsp.g1.AFSPHostListener;
+import edu.kit.tm.afsp.g1.FileAddThread;
 
 public class MainFrame extends JFrame implements AFSPHostListener {
 	private static final long serialVersionUID = 2025237748962798075L;
@@ -231,6 +232,15 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 		view.add(p);
 		return view;
 	}
+	
+	public void UpdateView()
+	{
+		afspHost.onFilesListUpdated();
+		localDataModel.fireTableDataChanged();
+		tcaLocalTable.adjustColumns();
+		invalidate();
+		repaint();
+	}
 
 	class UDPSignInAction extends WAction {
 		private static final long serialVersionUID = -9022451576733958350L;
@@ -299,6 +309,7 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 			jfc.setMultiSelectionEnabled(true);
 		}
 
+		
 		@Override
 		public void actionPerformed(ActionEvent e) {
 			logger.debug("MainFrame.AddFileAction.actionPerformed()");
@@ -306,17 +317,10 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 			int c = jfc.showOpenDialog(MainFrame.this);
 			if (c == JFileChooser.APPROVE_OPTION) {
 				File[] files = jfc.getSelectedFiles();
-
-				for (File file : files) {
+				for (File file : files)
 					logger.debug("add file " + file);
-					afspHost.getLocalFiles().add(file);
-				}
-				afspHost.onFilesListUpdated();
-				localDataModel.fireTableDataChanged();
-				tcaLocalTable.adjustColumns();
-				invalidate();
-				repaint();
-
+				FileAddThread fThread = new FileAddThread(files,afspHost.getLocalFiles(),MainFrame.this);
+				fThread.start();
 			}
 		}
 	}

@@ -1,14 +1,13 @@
 package edu.kit.tm.afsp.g1;
 
+import java.awt.EventQueue;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -26,22 +25,17 @@ public class LocalFileList extends LinkedList<File> {
 	public LocalFileList() {
 	}
 
-	public boolean add(File f) {
-		byte[] hash;
-		try {
-			hash = DigestUtils.md5(new FileInputStream(f));
-			hashes.put(f, hash);
-			files.put(LocalFileList.md52str(hash), f);
-			super.add(f);
-
+	public void addFiles(FileData[] fileList,FileViewUpdate update)
+	{
+		for(FileData f : fileList)
+		{
+			hashes.put(f.file, f.hash);
+			files.put(LocalFileList.md52str(f.hash), f.file);
+			super.add(f.file);
 			logger.debug("file added to local list " + f + " :: "
-					+ md52str(hash));
-
-			return true;
-		} catch (IOException e) {
-			e.printStackTrace();
+					+ md52str(f.hash));
+			EventQueue.invokeLater(update);
 		}
-		return false;
 	}
 
 	public static String md52str(byte[] hash) {
