@@ -35,6 +35,7 @@ import org.jdesktop.swingx.JXTaskPaneContainer;
 import org.jdesktop.swingx.painter.RectanglePainter;
 import edu.kit.tm.afsp.g1.AFSPHost;
 import edu.kit.tm.afsp.g1.AFSPHostListener;
+import edu.kit.tm.afsp.g1.DownloadThread;
 import edu.kit.tm.afsp.g1.FileAddThread;
 
 public class MainFrame extends JFrame implements AFSPHostListener {
@@ -421,14 +422,11 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 
 			File target = new File(downloadDirectory, te.getFilename());
 			logger.info("download target is " + target.getAbsolutePath());
-			try {
-				afspHost.download(te.getForeignHost(), te.getDigest(), target);
-			} catch (IOException e1) {
-				logger.error(e1);
+			DownloadThread dThread = new DownloadThread(afspHost,te.getForeignHost(), te.getDigest(), target, logger);
+			dThread.start();
 			}
 
 		}
-	}
 
 	class CloseAction extends WAction {
 		private static final long serialVersionUID = 1L;
@@ -458,6 +456,7 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 		public SelectDownloadFolder() {
 			setText("Select DownloadFolder");
 			setAsset("basket");
+			jfc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 
 		}
 
@@ -465,7 +464,7 @@ public class MainFrame extends JFrame implements AFSPHostListener {
 		public void actionPerformed(ActionEvent e) {
 			int c = jfc.showOpenDialog(MainFrame.this);
 			if (c == JFileChooser.APPROVE_OPTION) {
-				downloadDirectory = jfc.getSelectedFile().getParentFile();
+				downloadDirectory = jfc.getSelectedFile();
 				logger.info("changed download folder to: "
 						+ downloadDirectory.getAbsolutePath());
 			}
