@@ -25,17 +25,14 @@ public class LocalFileList extends LinkedList<File> {
 	public LocalFileList() {
 	}
 
-	public void addFiles(FileData[] fileList,FileViewUpdate update)
+	public void addFile(FileData fileData,FileViewUpdate update)
 	{
-		for(FileData f : fileList)
-		{
-			hashes.put(f.file, f.hash);
-			files.put(LocalFileList.md52str(f.hash), f.file);
-			super.add(f.file);
-			logger.debug("file added to local list " + f + " :: "
-					+ md52str(f.hash));
+			hashes.put(fileData.file, fileData.hash);
+			files.put(LocalFileList.md52str(fileData.hash), fileData.file);
+			super.add(fileData.file);
+			logger.debug("file added to local list " + fileData.file + " :: "
+					+ md52str(fileData.hash));
 			EventQueue.invokeLater(update);
-		}
 	}
 
 	public static String md52str(byte[] hash) {
